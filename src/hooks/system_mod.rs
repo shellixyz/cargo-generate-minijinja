@@ -1,5 +1,5 @@
 use log::debug;
-use rhai::{Dynamic, FuncRegistration, Module};
+use rhai::{Dynamic, Module};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -20,15 +20,12 @@ pub fn create_module(working_directory: PathBuf, allow_commands: bool, silent: b
     let mut module = Module::new();
 
     let cwd = working_directory.clone();
-    FuncRegistration::new("command").set_into_module(
-        &mut module,
-        move |name: &str, commands_args: rhai::Array| {
-            run_command(&cwd, name, commands_args, allow_commands, silent)
-        },
-    );
+    module.set_native_fn("command", move |name: &str, commands_args: rhai::Array| {
+        run_command(&cwd, name, commands_args, allow_commands, silent)
+    });
 
     let cwd = working_directory.clone();
-    FuncRegistration::new("command").set_into_module(&mut module, move |name: &str| {
+    module.set_native_fn("command", move |name: &str| {
         run_command(&cwd, name, rhai::Array::new(), allow_commands, silent)
     });
 

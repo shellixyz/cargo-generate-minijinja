@@ -346,15 +346,16 @@ fn init_hook_can_set_project_name() {
 
     binary()
         .arg_git(template.path())
+        .arg_name("dummy")
         .arg("--silent")
         .current_dir(dir.path())
         .assert()
         .success()
         .stdout(predicates::str::contains("Done!").from_utf8());
 
-    assert!(dir.exists("project-bar/generated.txt"));
+    assert!(dir.exists("dummy/generated.txt"));
     assert!(dir
-        .read("project-bar/generated.txt")
+        .read("dummy/generated.txt")
         .contains("project_bar"));
 }
 

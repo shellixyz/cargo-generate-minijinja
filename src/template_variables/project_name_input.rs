@@ -17,14 +17,21 @@ impl TryFrom<(&LiquidObjectResource, &UserParsedInput)> for ProjectNameInput {
     fn try_from(
         (liquid_object, user_parsed_input): (&LiquidObjectResource, &UserParsedInput),
     ) -> Result<Self, Self::Error> {
-        let name = liquid_object
-            .lock()
-            .unwrap()
-            .borrow()
-            .get("project-name")
-            .and_then(|v| v.as_str())
+        let name_str = {
+            let guard = liquid_object.lock().unwrap();
+            let borrowed_obj = guard.borrow();
+            
+            // Try underscore version first (set by init hooks) then fall back to hyphenated version (from CLI)
+            borrowed_obj
+                .get("project_name")
+                .or_else(|| borrowed_obj.get("project-name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        };
+        
+        let name = name_str
+            .as_deref()
             .map(|v| {
-                let v = v.to_string();
                 if let Some(n) = user_parsed_input.name() {
                     if n != v {
                         warn!(
@@ -32,12 +39,12 @@ impl TryFrom<(&LiquidObjectResource, &UserParsedInput)> for ProjectNameInput {
                             style("Project name changed by template, from").bold(),
                             style(n).bold().yellow(),
                             style("to").bold(),
-                            style(&v).bold().green(),
+                            style(v).bold().green(),
                             style("...").bold()
                         );
                     }
                 }
-                v
+                v.to_string()
             })
             .or_else(|| user_parsed_input.name().map(String::from));
 

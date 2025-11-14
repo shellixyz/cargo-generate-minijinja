@@ -34,4 +34,38 @@ pub fn register_all_filters(
     env.add_filter("snake_case", |s: String| -> String { s.to_snake_case() });
     env.add_filter("title_case", |s: String| -> String { s.to_title_case() });
     env.add_filter("upper_camel_case", |s: String| -> String { s.to_upper_camel_case() });
+    
+    // Register date filter - simple implementation extracting year from date string
+    env.add_filter("date", date_filter);
+}
+
+fn date_filter(date_str: String, format_str: String) -> String {
+    // Simple date filter that extracts portions of the date string
+    // For now, just handle the common case of extracting the year (%Y)
+    match format_str.as_str() {
+        "%Y" => {
+            // Extract year (first 4 digits)
+            date_str.chars().take(4).collect()
+        },
+        "%m" => {
+            // Extract month (characters 5-6 in YYYY-MM-DD format)
+            if date_str.len() >= 7 {
+                date_str.chars().skip(5).take(2).collect()
+            } else {
+                date_str
+            }
+        },
+        "%d" => {
+            // Extract day (characters 8-9 in YYYY-MM-DD format)
+            if date_str.len() >= 10 {
+                date_str.chars().skip(8).take(2).collect()
+            } else {
+                date_str
+            }
+        },
+        _ => {
+            // For unsupported formats, return the original string
+            date_str
+        }
+    }
 }

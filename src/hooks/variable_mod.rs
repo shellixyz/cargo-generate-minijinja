@@ -27,6 +27,13 @@ pub fn create_module(liquid_object: &LiquidObjectResource) -> Module {
                 NamedValue::NonExistent => Ok(Dynamic::from(String::from(""))),
                 NamedValue::Bool(v) => Ok(Dynamic::from(v)),
                 NamedValue::String(v) => Ok(Dynamic::from(v)),
+                NamedValue::Array(arr) => {
+                    let rhai_array: Array = arr
+                        .into_iter()
+                        .map(|v| Dynamic::from(v.to_string()))
+                        .collect();
+                    Ok(Dynamic::from(rhai_array))
+                }
             }
         }
     });
@@ -72,7 +79,7 @@ pub fn create_module(liquid_object: &LiquidObjectResource) -> Module {
         let liquid_object = liquid_object.clone();
         move |name: &str, value: Array| -> HookResult<()> {
             match liquid_object.get_value(name)? {
-                NamedValue::NonExistent => {
+                NamedValue::NonExistent | NamedValue::Array(_) => {
                     let val = rhai_to_liquid_value(Dynamic::from(value))?;
                     liquid_object
                         .lock()
@@ -214,6 +221,7 @@ enum NamedValue {
     NonExistent,
     Bool(bool),
     String(String),
+    Array(Vec<serde_json::Value>),
 }
 
 trait GetNamedValue {
@@ -227,11 +235,20 @@ impl GetNamedValue for LiquidObjectResource {
         let obj = lock.borrow();
         
         Ok(obj.get(name).map_or_else(|| NamedValue::NonExistent, |value| {
-            // Try to interpret as bool first
-            value.as_bool()
-                .map(NamedValue::Bool)
-                .or_else(|| value.as_str().map(|s| NamedValue::String(s.to_string())))
-                .unwrap_or_else(|| NamedValue::String(value.to_string()))
+            // Try to interpret as array first
+            if let Some(arr) = value.as_array() {
+                return NamedValue::Array(arr.clone());
+            }
+            // Then try bool
+            if let Some(b) = value.as_bool() {
+                return NamedValue::Bool(b);
+            }
+            // Then try string
+            if let Some(s) = value.as_str() {
+                return NamedValue::String(s.to_string());
+            }
+            // Fallback to string representation
+            NamedValue::String(value.to_string())
         }))
     }
 }

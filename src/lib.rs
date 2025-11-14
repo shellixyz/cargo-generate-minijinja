@@ -61,7 +61,6 @@ use log::Record;
 use log::{info, warn};
 use project_variables::{StringEntry, StringKind, TemplateSlots, VarInfo};
 use std::{
-    cell::RefCell,
     collections::HashMap,
     env,
     io::Write,
@@ -588,14 +587,19 @@ pub(crate) fn add_missing_provided_values(
     template_values: &HashMap<String, toml::Value>,
 ) -> Result<(), anyhow::Error> {
     template_values.iter().try_for_each(|(k, v)| {
-        if RefCell::borrow(&liquid_object.lock().unwrap()).contains_key(k.as_str()) {
+        let map = liquid_object.lock().unwrap();
+        let borrowed = map.borrow();
+        if borrowed.contains_key(k.as_str()) {
             return Ok(());
         }
+        drop(borrowed);
+        drop(map);
+        
         // we have a value without a slot in the liquid object.
         // try to create the slot from the provided value
         let value = match v {
-            toml::Value::String(content) => liquid_core::Value::Scalar(content.clone().into()),
-            toml::Value::Boolean(content) => liquid_core::Value::Scalar((*content).into()),
+            toml::Value::String(content) => serde_json::Value::from(content.clone()),
+            toml::Value::Boolean(content) => serde_json::Value::from(*content),
             _ => anyhow::bail!(format!(
                 "{} {}",
                 emoji::ERROR,
@@ -608,7 +612,7 @@ pub(crate) fn add_missing_provided_values(
             .lock()
             .unwrap()
             .borrow_mut()
-            .insert(k.clone().into(), value);
+            .insert(k.clone(), value);
         Ok(())
     })?;
     Ok(())

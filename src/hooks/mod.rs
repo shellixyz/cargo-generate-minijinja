@@ -5,7 +5,6 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToPascalCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToTitleCase, ToUpperCamelCase,
 };
-use liquid::ValueView;
 use log::debug;
 use rhai::EvalAltResult;
 use std::{env, path::Path};
@@ -85,15 +84,14 @@ pub fn evaluate_script<T: Clone + 'static>(
                 .borrow()
                 .get(name)
                 .map_or(Ok(None), |value| {
-                    Ok(value.as_view().as_scalar().map(|scalar| {
-                        scalar.to_bool().map_or_else(
-                            || {
-                                let v = scalar.to_kstr();
-                                v.as_str().into()
-                            },
-                            |v| v.into(),
-                        )
-                    }))
+                    Ok(if let Some(b) = value.as_bool() {
+                        Some(rhai::Dynamic::from(b))
+                    } else if let Some(s) = value.as_str() {
+                        Some(rhai::Dynamic::from(s.to_string()))
+                    } else {
+                        Some(rhai::Dynamic::from(value.to_string()))
+                    })
+
                 })
         }
     });

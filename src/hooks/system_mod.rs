@@ -197,7 +197,7 @@ mod tests {
 
         #[cfg(target_family = "unix")]
         let content = engine
-            .eval::<String>(r#"system::command("/bin/cat", ["file1"])"#)
+            .eval::<String>(r#"system::command("/usr/bin/env", "cat", ["file1"])"#)
             .unwrap();
 
         #[cfg(target_family = "windows")]

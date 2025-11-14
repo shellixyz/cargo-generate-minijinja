@@ -28,10 +28,7 @@ home = "~0.5"
 ignore = "~0.4"
 indexmap = { version = "~2", features = ["serde"] }
 indicatif = "~0.18"
-liquid = "~0.26"
-liquid-core = "~0.26"
-liquid-derive = "~0.26"
-liquid-lib = "~0.26"
+minijinja = { version = "~2.0", features = ["unicode"] }
 log = "~0.4"
 names = { version = "~0.14", default-features = false }
 openssl = { version = "~0.10", optional = true }
@@ -42,6 +39,7 @@ rhai = "~1.22"
 sanitize-filename = "~0.6"
 semver = { version = "~1.0", features = ["serde"] }
 serde = { version = "~1.0", features = ["derive"] }
+serde_json = "~1.0"
 tempfile = "~3.19"
 thiserror = "~2.0"
 time = "~0.3"

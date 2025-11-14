@@ -1,7 +1,5 @@
 use anyhow::Result;
 use indexmap::IndexMap;
-use liquid_core::model::map::Entry;
-use liquid_core::{Value, ValueView};
 use log::info;
 use regex::Regex;
 use thiserror::Error;
@@ -172,16 +170,15 @@ pub fn show_project_variables_with_value(template_object: &LiquidObjectResource,
 
     template_slots
         .iter()
-        .filter(|(k, _)| template_object.lock().unwrap().borrow().contains_key(**k))
+        .filter(|(k, _)| template_object.lock().unwrap().borrow().contains_key(&k.to_string()))
         .for_each(|(k, v)| {
             let name = v.var_name.as_str();
             let value = template_object
                 .lock()
                 .unwrap()
                 .borrow()
-                .get(*k)
+                .get(&k.to_string())
                 .unwrap()
-                .to_kstr()
                 .to_string();
             info!(
                 "{} {} (placeholder provided by cli argument)",
@@ -195,7 +192,7 @@ pub fn show_project_variables_with_value(template_object: &LiquidObjectResource,
 pub fn fill_project_variables(
     template_object: &LiquidObjectResource,
     config: &Config,
-    value_provider: impl Fn(&TemplateSlots) -> Result<Value>,
+    value_provider: impl Fn(&TemplateSlots) -> Result<serde_json::Value>,
 ) -> Result<()> {
     let template_slots = config
         .placeholders
@@ -204,21 +201,18 @@ pub fn fill_project_variables(
         .unwrap_or_else(|| Ok(IndexMap::new()))?;
 
     for (&key, slot) in template_slots.iter() {
-        match template_object
-            .lock()
-            .unwrap()
-            .borrow_mut()
-            .entry(key.to_string())
         {
-            Entry::Occupied(_) => {
-                // we already have the value from the config file
-            }
-            Entry::Vacant(entry) => {
-                // we don't have the file from the config but we can ask for it
-                let value = value_provider(slot)?;
-                entry.insert(value);
+            let template_obj = template_object.lock().unwrap();
+            let borrowed = template_obj.borrow();
+            if borrowed.contains_key(key) {
+                // Key already exists, skip
+                continue;
             }
         }
+        
+        // we don't have the variable yet, so we ask for it
+        let value = value_provider(slot)?;
+        template_object.lock().unwrap().borrow_mut().insert(key.to_string(), value);
     }
     Ok(())
 }

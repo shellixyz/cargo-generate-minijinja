@@ -1,9 +1,12 @@
 use anyhow::{bail, Context, Result};
 use console::style;
+use heck::{
+    ToKebabCase, ToLowerCamelCase, ToPascalCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
+    ToTitleCase, ToUpperCamelCase,
+};
 use indicatif::{MultiProgress, ProgressBar};
-use liquid::model::KString;
-use liquid::{Parser, ParserBuilder};
-use liquid_core::{Object, Value};
+use minijinja::Environment;
+use serde_json;
 use std::sync::{Arc, Mutex};
 use std::{
     cell::RefCell,
@@ -18,13 +21,12 @@ use crate::filenames::substitute_filename;
 use crate::hooks::PoisonError;
 use crate::include_exclude::*;
 use crate::progressbar::spinner;
-use crate::template_filters::*;
 use crate::template_variables::{
     get_authors, get_os_arch, Authors, CrateName, ProjectDir, ProjectName,
 };
 use crate::user_parsed_input::UserParsedInput;
 
-pub type LiquidObjectResource = Arc<Mutex<RefCell<Object>>>;
+pub type LiquidObjectResource = Arc<Mutex<RefCell<serde_json::Map<String, serde_json::Value>>>>;
 
 pub fn create_liquid_engine(
     template_dir: PathBuf,
@@ -32,25 +34,42 @@ pub fn create_liquid_engine(
     allow_commands: bool,
     silent: bool,
     rhai_filter_files: Arc<Mutex<Vec<PathBuf>>>,
-) -> Parser {
-    ParserBuilder::with_stdlib()
-        .filter(KebabCaseFilterParser)
-        .filter(LowerCamelCaseFilterParser)
-        .filter(PascalCaseFilterParser)
-        .filter(ShoutyKebabCaseFilterParser)
-        .filter(ShoutySnakeCaseFilterParser)
-        .filter(SnakeCaseFilterParser)
-        .filter(TitleCaseFilterParser)
-        .filter(UpperCamelCaseFilterParser)
-        .filter(RhaiFilterParser::new(
-            template_dir,
-            liquid_object,
-            allow_commands,
-            silent,
-            rhai_filter_files,
-        ))
-        .build()
-        .expect("can't fail due to no partials support")
+) -> Environment<'static> {
+    let mut env = Environment::new();
+    
+    // Register custom filters
+    crate::template_filters::register_all_filters(
+        &mut env,
+        template_dir,
+        liquid_object,
+        allow_commands,
+        silent,
+        rhai_filter_files,
+    );
+    
+    env
+}
+
+fn register_template_filters(
+    env: &mut Environment,
+    template_dir: PathBuf,
+    liquid_object: LiquidObjectResource,
+    allow_commands: bool,
+    silent: bool,
+    rhai_filter_files: Arc<Mutex<Vec<PathBuf>>>,
+) {
+    // Register case conversion filters
+    env.add_filter("kebab_case", |s: String| -> String { s.to_kebab_case() });
+    env.add_filter("lower_camel_case", |s: String| -> String { s.to_lower_camel_case() });
+    env.add_filter("pascal_case", |s: String| -> String { s.to_pascal_case() });
+    env.add_filter("shouty_kebab_case", |s: String| -> String { s.to_shouty_kebab_case() });
+    env.add_filter("shouty_snake_case", |s: String| -> String { s.to_shouty_snake_case() });
+    env.add_filter("snake_case", |s: String| -> String { s.to_snake_case() });
+    env.add_filter("title_case", |s: String| -> String { s.to_title_case() });
+    env.add_filter("upper_camel_case", |s: String| -> String { s.to_upper_camel_case() });
+    
+    // Register rhai filter
+    register_rhai_filter(env, template_dir, liquid_object, allow_commands, silent, rhai_filter_files);
 }
 
 /// create liquid object for the template, and pre-fill it with all known variables
@@ -58,23 +77,23 @@ pub fn create_liquid_object(user_parsed_input: &UserParsedInput) -> Result<Liqui
     let authors: Authors = get_authors()?;
     let os_arch = get_os_arch();
 
-    let mut liquid_object = Object::new();
+    let mut liquid_object = serde_json::Map::new();
 
     if let Some(name) = user_parsed_input.name() {
-        liquid_object.insert("project-name".into(), Value::Scalar(name.to_owned().into()));
+        liquid_object.insert("project-name".to_string(), serde_json::Value::from(name.to_owned()));
     }
 
     liquid_object.insert(
-        "crate_type".into(),
-        Value::Scalar(user_parsed_input.crate_type().to_string().into()),
+        "crate_type".to_string(),
+        serde_json::Value::from(user_parsed_input.crate_type().to_string()),
     );
-    liquid_object.insert("authors".into(), Value::Scalar(authors.author.into()));
-    liquid_object.insert("username".into(), Value::Scalar(authors.username.into()));
-    liquid_object.insert("os-arch".into(), Value::Scalar(os_arch.into()));
+    liquid_object.insert("authors".to_string(), serde_json::Value::from(authors.author));
+    liquid_object.insert("username".to_string(), serde_json::Value::from(authors.username));
+    liquid_object.insert("os-arch".to_string(), serde_json::Value::from(os_arch));
 
     liquid_object.insert(
-        "is_init".into(),
-        Value::Scalar(user_parsed_input.init().into()),
+        "is_init".to_string(),
+        serde_json::Value::from(user_parsed_input.init()),
     );
 
     Ok(Arc::new(Mutex::new(RefCell::new(liquid_object))))
@@ -90,18 +109,18 @@ pub fn set_project_name_variables(
     let mut liquid_object = ref_cell.borrow_mut();
 
     liquid_object.insert(
-        "project-name".into(),
-        Value::Scalar(project_name.as_ref().to_owned().into()),
+        "project-name".to_string(),
+        serde_json::Value::from(project_name.as_ref().to_owned()),
     );
 
     liquid_object.insert(
-        "crate_name".into(),
-        Value::Scalar(crate_name.as_ref().to_owned().into()),
+        "crate_name".to_string(),
+        serde_json::Value::from(crate_name.as_ref().to_owned()),
     );
 
     liquid_object.insert(
-        "within_cargo_project".into(),
-        Value::Scalar(is_within_cargo_project(project_dir.as_ref()).into()),
+        "within_cargo_project".to_string(),
+        serde_json::Value::from(is_within_cargo_project(project_dir.as_ref())),
     );
 
     Ok(())
@@ -119,7 +138,7 @@ pub fn walk_dir(
     project_dir: &Path,
     hook_files: &[String],
     liquid_object: &LiquidObjectResource,
-    rhai_engine: Parser,
+    rhai_engine: Environment,
     rhai_filter_files: &Arc<Mutex<Vec<PathBuf>>>,
     mp: &mut MultiProgress,
     quiet: bool,
@@ -183,7 +202,7 @@ pub fn walk_dir(
                     match template_process_file(liquid_object, &rhai_engine, filename) {
                         Err(e) => {
                             files_with_errors
-                                .push((relative_path.display().to_string(), e.clone()));
+                                .push((relative_path.display().to_string(), e.to_string()));
                         }
                         Ok(new_contents) => {
                             let new_filename =
@@ -265,77 +284,70 @@ pub fn walk_dir(
 
 fn template_process_file(
     context: &LiquidObjectResource,
-    parser: &Parser,
+    parser: &Environment,
     file: &Path,
-) -> liquid_core::Result<String> {
-    let content =
-        fs::read_to_string(file).map_err(|e| liquid_core::Error::with_msg(e.to_string()))?;
+) -> Result<String> {
+    let content = fs::read_to_string(file)
+        .with_context(|| format!("Failed to read file: {}", file.display()))?;
     render_string_gracefully(context, parser, content.as_str())
 }
 
 pub fn render_string_gracefully(
     context: &LiquidObjectResource,
-    parser: &Parser,
+    _parser: &Environment,
     content: &str,
-) -> liquid_core::Result<String> {
-    let template = parser.parse(content)?;
-
-    // Liquid engine needs access to the context.
-    // At the same time, our own `rhai` liquid filter may also need it, but doesn't have access
-    // to the one provided to the liquid engine, thus it has it's own cloned `Arc` for it. These
-    // WILL collide and cause the `Mutex` to hang in case the user tries to modify any variable
-    // inside a rhai filter script - so we currently clone it, and let any rhai filter manipulate
-    // the original. Note that hooks do not run at the same time as liquid, thus they do not
-    // suffer these limitations.
-    let render_object_view = {
-        let ref_cell = context
-            .lock()
-            .map_err(|_| liquid_core::Error::with_msg(PoisonError.to_string()))?;
-        let object_view = ref_cell.borrow();
-        object_view.to_owned()
-    };
-    let render_result = template.render(&render_object_view);
-
-    match render_result {
-        ctx @ Ok(_) => ctx,
+) -> Result<String> {
+    // Get the context values
+    let ref_cell = context.lock().map_err(|_| PoisonError)?;
+    let object_map = ref_cell.borrow();
+    
+    // Create a minijinja context from serde_json::Value
+    let context_obj = serde_json::Value::Object(object_map.clone());
+    
+    // Try to render using minijinja's render macro-like behavior
+    // For simple template strings, we can use compile_expression-like behavior or add/get pattern
+    // Create a temporary template
+    let template_name = "__temp_template__";
+    
+    // Clone the parser and add template
+    let mut env = Environment::new();
+    
+    // Register filters from the original environment
+    crate::template_filters::register_all_filters(
+        &mut env,
+        std::path::PathBuf::new(),
+        context.clone(),
+        false,
+        false,
+        Arc::new(Mutex::new(Vec::new())),
+    );
+    
+    // Add and compile the template
+    env.add_template(template_name, content)
+        .with_context(|| format!("Failed to add template"))?;
+    
+    let template = env.get_template(template_name)
+        .with_context(|| format!("Failed to get template"))?;
+    
+    // Evaluate the template
+    match template.render(context_obj) {
+        Ok(result) => {
+            Ok(result)
+        }
         Err(e) => {
-            // handle it gracefully
+            // Gracefully handle errors - if a variable is missing, continue with original content
             let msg = e.to_string();
-            if msg.contains("requested variable") {
-                // so, we miss a variable that is present in the file to render
-                let requested_var =
-                    regex::Regex::new(r"(?P<p>.*requested\svariable=)(?P<v>.*)").unwrap();
-                let captures = requested_var.captures(msg.as_str()).unwrap();
-                if let Some(Some(req_var)) = captures.iter().last() {
-                    let missing_variable = KString::from(req_var.as_str().to_string());
-                    // The missing variable might have been supplied by a rhai filter,
-                    // if not, substitute an empty string before retrying
-                    let _ = context
-                        .lock()
-                        .map_err(|_| liquid_core::Error::with_msg(PoisonError.to_string()))?
-                        .borrow_mut()
-                        .entry(missing_variable)
-                        .or_insert_with(|| Value::scalar("".to_string()));
-                    return render_string_gracefully(context, parser, content);
-                }
+            if msg.contains("undefined variable") || msg.contains("no such variable") {
+                Ok(content.to_string())
+            } else {
+                // For other errors, still return the original content
+                Ok(content.to_string())
             }
-            // todo: find nice way to have this happening outside of this fn
-            // error!(
-            //     "{} `{}`",
-            //     style("Error rendering template, file has been copied without rendering.")
-            //         .bold()
-            //         .red(),
-            //     style(filename.display()).bold()
-            // );
-            // todo: end
-
-            // fallback: no rendering, keep things original
-            Ok(content.to_string())
         }
     }
 }
 
-fn print_files_with_errors_warning(files_with_errors: Vec<(String, liquid_core::Error)>) -> String {
+fn print_files_with_errors_warning(files_with_errors: Vec<(String, String)>) -> String {
     let mut msg = format!(
         "{}",
         style("Substitution skipped, found invalid syntax in\n")
@@ -352,4 +364,16 @@ fn print_files_with_errors_warning(files_with_errors: Vec<(String, liquid_core::
     let hint = style("Consider adding these files to a `cargo-generate.toml` in the template repo to skip substitution on these files.").bold();
 
     format!("{msg}\n{hint}\n\n{read_more}")
+}
+
+// Placeholder for rhai filter registration - will be implemented in template_filters module
+fn register_rhai_filter(
+    _env: &mut Environment,
+    _template_dir: PathBuf,
+    _liquid_object: LiquidObjectResource,
+    _allow_commands: bool,
+    _silent: bool,
+    _rhai_filter_files: Arc<Mutex<Vec<PathBuf>>>,
+) {
+    // This will be filled in when we implement minijinja support in template_filters.rs
 }

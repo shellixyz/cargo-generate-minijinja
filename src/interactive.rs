@@ -6,7 +6,6 @@ use anyhow::{anyhow, bail, Result};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 use dialoguer::{Editor, Input};
-use liquid_core::Value;
 use log::warn;
 use std::{
     borrow::Cow,
@@ -92,25 +91,25 @@ pub fn prompt_and_check_variable(
     }
 }
 
-pub fn variable(variable: &TemplateSlots, provided_value: Option<&impl ToString>) -> Result<Value> {
+pub fn variable(variable: &TemplateSlots, provided_value: Option<&impl ToString>) -> Result<serde_json::Value> {
     let user_entry = prompt_and_check_variable(variable, provided_value.map(|v| v.to_string()))?;
     match &variable.var_info {
         VarInfo::Bool { .. } => {
             let as_bool = user_entry.parse::<bool>()?;
-            Ok(Value::Scalar(as_bool.into()))
+            Ok(serde_json::Value::from(as_bool))
         }
-        VarInfo::String { .. } => Ok(Value::Scalar(user_entry.into())),
+        VarInfo::String { .. } => Ok(serde_json::Value::from(user_entry)),
         VarInfo::Array { .. } => {
             let items = if user_entry.is_empty() {
                 Vec::new()
             } else {
                 user_entry
                     .split(LIST_SEP)
-                    .map(|s| Value::Scalar(s.to_string().into()))
+                    .map(|s| serde_json::Value::from(s.to_string()))
                     .collect()
             };
 
-            Ok(Value::Array(items))
+            Ok(serde_json::Value::from(items))
         }
     }
 }

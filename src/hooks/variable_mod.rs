@@ -1,5 +1,3 @@
-use liquid::ValueView;
-use liquid_core::Value;
 use regex::Regex;
 use rhai::{Array, Dynamic, Module};
 
@@ -43,8 +41,8 @@ pub fn create_module(liquid_object: &LiquidObjectResource) -> Module {
                         .map_err(|_| PoisonError::new_eval_alt_result())?
                         .borrow_mut()
                         .insert(
-                            name.to_string().into(),
-                            Value::Scalar(value.to_string().into()),
+                            name.to_string(),
+                            serde_json::Value::from(value.to_string()),
                         );
                     Ok(())
                 }
@@ -62,7 +60,7 @@ pub fn create_module(liquid_object: &LiquidObjectResource) -> Module {
                         .lock()
                         .map_err(|_| PoisonError::new_eval_alt_result())?
                         .borrow_mut()
-                        .insert(name.to_string().into(), Value::Scalar(value.into()));
+                        .insert(name.to_string(), serde_json::Value::from(value));
                     Ok(())
                 }
                 _ => Err(format!("Variable {name} not a bool").into()),
@@ -80,7 +78,7 @@ pub fn create_module(liquid_object: &LiquidObjectResource) -> Module {
                         .lock()
                         .map_err(|_| PoisonError::new_eval_alt_result())?
                         .borrow_mut()
-                        .insert(name.to_string().into(), val);
+                        .insert(name.to_string(), val);
                     Ok(())
                 }
                 _ => Err(format!("Variable {name} not an array").into()),
@@ -224,51 +222,48 @@ trait GetNamedValue {
 
 impl GetNamedValue for LiquidObjectResource {
     fn get_value(&self, name: &str) -> HookResult<NamedValue> {
-        let value = self
-            .lock()
-            .map_err(|_| PoisonError::new_eval_alt_result())?
-            .borrow()
-            .get(name)
-            .map_or(NamedValue::NonExistent, |value| {
-                value
-                    .as_scalar()
-                    .map(|scalar| {
-                        scalar.to_bool().map_or_else(
-                            || {
-                                let v = scalar.to_kstr();
-                                NamedValue::String(String::from(v.as_str()))
-                            },
-                            NamedValue::Bool,
-                        )
-                    })
-                    .unwrap_or_else(|| NamedValue::NonExistent)
-            });
-        Ok(value)
+        let lock = self.lock()
+            .map_err(|_| PoisonError::new_eval_alt_result())?;
+        let obj = lock.borrow();
+        
+        if let Some(value) = obj.get(name) {
+            // Try to interpret as bool first
+            if let Some(b) = value.as_bool() {
+                Ok(NamedValue::Bool(b))
+            } else if let Some(s) = value.as_str() {
+                Ok(NamedValue::String(s.to_string()))
+            } else {
+                // Try to convert to string
+                Ok(NamedValue::String(value.to_string()))
+            }
+        } else {
+            Ok(NamedValue::NonExistent)
+        }
     }
 }
 
-fn rhai_to_liquid_value(val: Dynamic) -> HookResult<Value> {
-    val.as_bool()
-        .map(Into::into)
-        .map(Value::Scalar)
-        .or_else(|_| val.clone().into_string().map(Into::into).map(Value::Scalar))
-        .or_else(|_| {
-            val.clone()
-                .try_cast::<Array>()
-                .ok_or_else(|| {
-                    format!(
-                        "expecting type to be string, bool or array but found a '{}' instead",
-                        val.type_name()
-                    )
-                    .into()
-                })
-                .and_then(|arr| {
-                    arr.into_iter()
-                        .map(rhai_to_liquid_value)
-                        .collect::<HookResult<_>>()
-                        .map(Value::Array)
-                })
-        })
+fn rhai_to_liquid_value(val: Dynamic) -> HookResult<serde_json::Value> {
+    if let Some(b) = val.clone().try_cast::<bool>() {
+        return Ok(serde_json::Value::from(b));
+    }
+    
+    if let Ok(s) = val.clone().into_string() {
+        return Ok(serde_json::Value::from(s));
+    }
+    
+    if let Some(arr) = val.clone().try_cast::<Array>() {
+        let items: HookResult<Vec<serde_json::Value>> = arr
+            .into_iter()
+            .map(rhai_to_liquid_value)
+            .collect();
+        return items.map(serde_json::Value::from);
+    }
+    
+    Err(format!(
+        "expecting type to be string, bool or array but found a '{}' instead",
+        val.type_name()
+    )
+    .into())
 }
 
 #[cfg(test)]
@@ -278,14 +273,12 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use liquid::Object;
-
     use super::*;
 
     #[test]
     fn test_rhai_set() {
         let mut engine = rhai::Engine::new();
-        let liquid_object = Arc::new(Mutex::new(RefCell::new(Object::new())));
+        let liquid_object = Arc::new(Mutex::new(RefCell::new(serde_json::Map::new())));
 
         let module = create_module(&liquid_object);
         engine.register_static_module("variable", module.into());
@@ -303,12 +296,18 @@ mod tests {
         let ref_cell = liquid_object.lock().unwrap();
         let liquid_object = ref_cell.borrow();
 
-        assert_eq!(
-            liquid_object.get("dependencies"),
-            Some(&Value::Array(vec![
-                Value::Scalar("some_dep".into()),
-                Value::Scalar("other_dep".into())
-            ]))
-        );
+        let deps_value = liquid_object.get("dependencies");
+        assert!(deps_value.is_some());
+        
+        // Check that it's an array with the expected values
+        if let Some(val) = deps_value {
+            if let Some(arr) = val.as_array() {
+                assert_eq!(arr.len(), 2);
+                assert_eq!(arr[0].as_str(), Some("some_dep"));
+                assert_eq!(arr[1].as_str(), Some("other_dep"));
+            } else {
+                panic!("Expected array value for dependencies");
+            }
+        }
     }
 }

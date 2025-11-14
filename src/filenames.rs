@@ -1,12 +1,12 @@
 use crate::{template::LiquidObjectResource, Result};
 
 use crate::template::render_string_gracefully;
-use liquid::Parser;
+use minijinja::Environment;
 use std::path::{Component, Path, PathBuf};
 
 pub fn substitute_filename(
     filepath: &Path,
-    parser: &Parser,
+    parser: &Environment,
     context: &LiquidObjectResource,
 ) -> Result<PathBuf> {
     let mut path = PathBuf::new();
@@ -38,7 +38,7 @@ fn sanitize_filename(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use liquid::{model::Value, Object};
+    use serde_json::{Map, Value};
     use std::{
         cell::RefCell,
         sync::{Arc, Mutex},
@@ -155,17 +155,16 @@ mod tests {
 
     //region wrapper helpers
     fn prepare_context(value: &str) -> LiquidObjectResource {
-        let mut ctx = Object::default();
-        ctx.entry("author")
-            .or_insert(Value::scalar(value.to_string()));
+        let mut ctx = Map::new();
+        ctx.insert("author".to_string(), Value::String(value.to_string()));
 
         Arc::new(Mutex::new(RefCell::new(ctx)))
     }
 
     fn substitute_filename(f: &str, ctx: &LiquidObjectResource) -> Result<String> {
-        let parser = Parser::default();
+        let env = minijinja::Environment::new();
 
-        super::substitute_filename(f.as_ref(), &parser, ctx)
+        super::substitute_filename(f.as_ref(), &env, ctx)
             .map(|p| p.to_str().unwrap().to_string())
     }
     //endregion

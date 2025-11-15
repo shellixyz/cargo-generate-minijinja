@@ -35,6 +35,9 @@ pub struct TemplateConfig {
     pub ignore: Option<Vec<String>>,
     pub vcs: Option<Vcs>,
     pub init: Option<bool>,
+    /// If true, disables automatic whitespace stripping (trim_blocks and lstrip_blocks)
+    /// Set to true to restore Liquid-like behavior where {%- and -%} are required for whitespace control
+    pub preserve_whitespace: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
@@ -211,6 +214,7 @@ mod tests {
                 ignore: None,
                 vcs: None,
                 init: None,
+                preserve_whitespace: None,
             })
         );
         assert!(config.placeholders.is_some());

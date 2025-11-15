@@ -29,14 +29,17 @@ pub fn create_liquid_engine(
     allow_commands: bool,
     silent: bool,
     rhai_filter_files: Arc<Mutex<Vec<PathBuf>>>,
+    preserve_whitespace: bool,
 ) -> Environment<'static> {
     let mut env = Environment::new();
     
-    // Enable automatic whitespace stripping for cleaner output
+    // Enable automatic whitespace stripping for cleaner output (unless preserve_whitespace is true)
     // trim_blocks: removes the first newline after a block tag
     // lstrip_blocks: removes leading whitespace before a block tag
-    env.set_trim_blocks(true);
-    env.set_lstrip_blocks(true);
+    if !preserve_whitespace {
+        env.set_trim_blocks(true);
+        env.set_lstrip_blocks(true);
+    }
     
     // Register custom filters
     crate::template_filters::register_all_filters(
@@ -133,6 +136,7 @@ pub fn walk_dir(
             .any(|c| c == std::path::Component::Normal(".git".as_ref()))
     }
 
+    let preserve_whitespace = template_config.preserve_whitespace.unwrap_or(false);
     let matcher = Matcher::new(template_config, project_dir, hook_files)?;
     let spinner_style = spinner();
 
@@ -182,14 +186,14 @@ pub fn walk_dir(
         match matcher.should_include(relative_path) {
             ShouldInclude::Include => {
                 if entry.file_type().is_file() {
-                    match template_process_file(liquid_object, &rhai_engine, filename) {
+                    match template_process_file(liquid_object, &rhai_engine, filename, preserve_whitespace) {
                         Err(e) => {
                             files_with_errors
                                 .push((relative_path.display().to_string(), e.to_string()));
                         }
                         Ok(new_contents) => {
                             let new_filename =
-                                substitute_filename(filename, &rhai_engine, liquid_object)
+                                substitute_filename(filename, &rhai_engine, liquid_object, preserve_whitespace)
                                     .with_context(|| {
                                         format!(
                                             "{} {} `{}`",
@@ -218,7 +222,7 @@ pub fn walk_dir(
                         }
                     }
                 } else {
-                    let new_filename = substitute_filename(filename, &rhai_engine, liquid_object)?;
+                    let new_filename = substitute_filename(filename, &rhai_engine, liquid_object, preserve_whitespace)?;
                     let relative_path = new_filename.strip_prefix(project_dir)?;
                     let f = relative_path.display();
                     pb.inc(50);
@@ -230,7 +234,7 @@ pub fn walk_dir(
                 }
             }
             ShouldInclude::Exclude => {
-                let new_filename = substitute_filename(filename, &rhai_engine, liquid_object)?;
+                let new_filename = substitute_filename(filename, &rhai_engine, liquid_object, preserve_whitespace)?;
                 let mut f = filename_display;
                 // Check if the file to exclude is in a templated path
                 // If it is, we need to copy it to the new location
@@ -269,16 +273,18 @@ fn template_process_file(
     context: &LiquidObjectResource,
     parser: &Environment,
     file: &Path,
+    preserve_whitespace: bool,
 ) -> Result<String> {
     let content = fs::read_to_string(file)
         .with_context(|| format!("Failed to read file: {}", file.display()))?;
-    render_string_gracefully(context, parser, content.as_str())
+    render_string_gracefully(context, parser, content.as_str(), preserve_whitespace)
 }
 
 pub fn render_string_gracefully(
     context: &LiquidObjectResource,
     _parser: &Environment,
     content: &str,
+    preserve_whitespace: bool,
 ) -> Result<String> {
     // Get the context values
     let ref_cell = context.lock().map_err(|_| PoisonError)?;
@@ -295,9 +301,11 @@ pub fn render_string_gracefully(
     // Clone the parser and add template
     let mut env = Environment::new();
     
-    // Enable automatic whitespace stripping for cleaner output
-    env.set_trim_blocks(true);
-    env.set_lstrip_blocks(true);
+    // Enable automatic whitespace stripping for cleaner output (unless preserve_whitespace is true)
+    if !preserve_whitespace {
+        env.set_trim_blocks(true);
+        env.set_lstrip_blocks(true);
+    }
     
     // Register filters from the original environment
     crate::template_filters::register_all_filters(

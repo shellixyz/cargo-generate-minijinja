@@ -520,6 +520,7 @@ fn expand_template(
     // walk/evaluate the template
     let all_hook_files = config.get_hook_files();
     let mut template_config = config.template.take().unwrap_or_default();
+    let preserve_whitespace = template_config.preserve_whitespace.unwrap_or(false);
 
     ignore_me::remove_unneeded_files(template_dir, &template_config.ignore, args.verbose)?;
     let mut pbar = progressbar::new();
@@ -531,6 +532,7 @@ fn expand_template(
         user_parsed_input.allow_commands(),
         user_parsed_input.silent(),
         rhai_filter_files.clone(),
+        preserve_whitespace,
     );
     let result = template::walk_dir(
         &mut template_config,

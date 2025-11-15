@@ -8,12 +8,13 @@ pub fn substitute_filename(
     filepath: &Path,
     parser: &Environment,
     context: &LiquidObjectResource,
+    preserve_whitespace: bool,
 ) -> Result<PathBuf> {
     let mut path = PathBuf::new();
     for elem in filepath.components() {
         match elem {
             Component::Normal(e) => {
-                let parsed = render_string_gracefully(context, parser, e.to_str().unwrap())?;
+                let parsed = render_string_gracefully(context, parser, e.to_str().unwrap(), preserve_whitespace)?;
                 let parsed = sanitize_filename(parsed.as_str());
                 path.push(parsed);
             }
@@ -166,7 +167,7 @@ mod tests {
         env.set_trim_blocks(true);
         env.set_lstrip_blocks(true);
 
-        super::substitute_filename(f.as_ref(), &env, ctx)
+        super::substitute_filename(f.as_ref(), &env, ctx, false)
             .map(|p| p.to_str().unwrap().to_string())
     }
     //endregion

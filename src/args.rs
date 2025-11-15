@@ -43,7 +43,7 @@ mod heading {
 
 #[derive(Parser)]
 #[command(
-    name = "cargo generate",
+    name = "cargo generate-mj",
     bin_name = "cargo",
     arg_required_else_help(true),
     version,
@@ -52,7 +52,7 @@ mod heading {
     styles(style::STYLES)
 )]
 pub enum Cli {
-    #[command(name = "generate", visible_alias = "gen")]
+    #[command(name = "generate-mj", visible_alias = "genmj")]
     Generate(GenerateArgs),
 }
 

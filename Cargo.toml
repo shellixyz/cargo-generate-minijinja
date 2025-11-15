@@ -1,10 +1,10 @@
 [package]
-name = "cargo-generate"
-description = "cargo, make me a project"
+name = "cargo-generate-minijinja"
+description = "cargo, make me a project - Minijinja-based fork"
 version = "0.23.5"
-authors = ["Ashley Williams <ashley666ashley@gmail.com>"]
+authors = ["Ashley Williams <ashley666ashley@gmail.com>", "Michel Pastor <shellixyz@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/cargo-generate/cargo-generate"
+repository = "https://github.com/shellixyz/cargo-generate-minijinja"
 edition = "2021"
 include = ["src/**/*", "LICENSE-*", "*.md"]
 
@@ -54,6 +54,9 @@ indoc = "~2.0"
 predicates = "~3.1"
 url = "~2.5"
 
+[lib]
+name = "cargo_generate"
+
 [features]
 default = ["vendored-libgit2"]
 vendored-libgit2 = ["git2/vendored-libgit2"]
@@ -61,7 +64,7 @@ vendored-openssl = ["openssl/vendored", "git2/vendored-openssl"]
 
 [[bin]]
 path = "src/main.rs"
-name = "cargo-generate"
+name = "cargo-generate-mj"
 
 [profile.release]
 lto = true
